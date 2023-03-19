@@ -1,0 +1,187 @@
+#!/usr/bin/env bash
+
+manual="This command is an RSA algorithm implementation written in shell script.\nThere are three modes to choose from:\n\nI. Key generation:\nusage: ./p1.sh --key-generation <1st prime number> <2nd prime number>\neg: ./p1.sh --key-generation 707981 906313\n\nII. Encrypt mode:\nusage: ./p1.sh --encrypt --public-exponent <e> --modulus <n> <file>eg: ./p1.sh --encrypt --public-exponent 65537 --modulud 641652384053 testfile\nusage: ./p1.sh --key-generation <1st prime number> <2nd prime number> --encrypt <file>\neg: ./p1.sh --key-generation 707981 906313 --encrypt testfile\n\nIII. decrypt mode:\nusage: ./p1.sh --decrypt --private-exponent <d> --modulus <n> <file>\neg: ./p1.sh --decrypt --private-exponent 64657547393 --modulus 641652384053 testfile"
+
+check(){
+    local notnum=$( echo ${1} | grep '[^0-9]' )
+    if [ "${notnum}" == "" ]; then
+        return 1
+    fi
+    local sixteen=$( echo ${notnum} | grep '^0x' )
+    if [ "${sixteen}" == "" ]; then
+        fault="True"
+    else
+        sixteen=$(echo ${1} | sed 's/^[0x]//g')
+        upper=$( echo ${sixteen} | grep '[^0-9a-z]' )
+        lower=$( echo ${sixteen} | grep '[^0-9A-Z]' )
+        if [ "${upper}" != "" -a "${lower}" != "" ];then
+            fault="True"
+        else
+            return 0
+        fi
+    fi
+}
+
+extended_gcd(){
+    if [ "${2}" == "0" ]; then
+        echo "${1}" "1" "0"
+        return
+    fi
+    local tmp=$(echo "${1}%${2}" | bc)
+    #echo ${tmp} >&2
+    IFS=" " read d x y<<<"$(extended_gcd ${2} ${tmp})"
+    #echo ${d} ${x} ${y} >&2
+    local record=$(echo "${x}-((((${1}/${2}))*${y}))" | bc)
+    #echo ${record}
+    echo "${d}" "${y}" "${record}"
+    return
+    
+}
+
+keyGen(){
+    modulus=$(echo "${p}*${q}" | bc)
+    local r=$(echo "(${p}-1)*(${q}-1)" | bc)
+    modulus=$(echo ${modulus} | sed 's/\\[ \t]//g')
+    r=$(echo ${r} | sed 's/\\[ \t]//g')
+    #echo ${publice} ${r} >&2
+    local arr=$(extended_gcd ${publice} ${r})
+    IFS=' ' read a d b<<<"$(extended_gcd ${publice} ${r})"
+    privatee=${d}
+}
+
+power(){
+    local ans=1
+    local a=${1}
+    local n=${2}
+    while [ "${n}" != "0" ]
+    do
+        if [ "$(echo "${n}%2" | bc)" == "1" ]; then
+            ans=$(echo "${ans}*${a}%${modulus}" | bc)
+
+        fi
+        a=$(echo "${a}*${a}%${modulus}" | bc)
+        n=$(echo "${n}/2" | bc)
+        #echo ${n}
+    done
+    ans=$(echo ${ans} | sed 's/\\[ \t]//g')
+    echo ${ans}
+    return 0
+}
+
+keygen=false
+encrypt=false
+publice=""
+modulus=""
+decrypt=false
+privatee=""
+testfile=""
+p=""
+q=""
+fault="false"
+
+order=(${@})
+if [ "${#}" == "0" ]; then
+    echo -e ${manual} && exit 1
+fi
+for ((i=0;i<${#};i++))
+do
+    case ${order[${i}]} in
+        "--key-generation")
+            [ "$#" != 3 -a "$#" != 5 ] && fault=True
+            keygen=true
+            i=$((${i}+1))
+            p=$(echo ${order[${i}]} | sed 's/0x//g')
+            check ${p} && p=$(echo ${p} | sed 's/[a-z]/\u&/g') && p=`echo "obase=10; ibase=16; ${p}" | bc`
+            i=$((${i}+1))
+            q=$(echo ${order[${i}]} | sed 's/0x//g')
+            check ${q} && q=$(echo ${q} | sed 's/[a-z]/\u&/g') && q=`echo "obase=10; ibase=16; ${q}" | bc`
+            publice=65537
+            ;;
+        "--decrypt")
+            [ "$#" != 6 ] && fault=True
+            decrypt=true
+            ;;
+        "--encrypt")
+            [ "$#" != 6 -a "$#" != 5 ] && fault=True
+            encrypt=true
+            ;;
+        "--public-exponent")
+            i=$((${i}+1))
+            publice=$(echo ${order[${i}]} | sed 's/0x//g')
+            check ${publice} && publice=$(echo ${publice} | sed 's/[a-z]/\u&/g') && publice=`echo "obase=10; ibase=16; ${publice}" | bc`
+            ;;
+        "--modulus")
+            i=$((${i}+1))
+            modulus=$(echo ${order[${i}]} | sed 's/0x//g')
+            check ${modulus} && modulus=$(echo ${modulus} | sed 's/[a-z]/\u&/g') && modulus=`echo "obase=10; ibase=16; ${modulus}" | bc`
+            ;;
+        "--private-exponent")
+            i=$((${i}+1))
+            privatee=$(echo ${order[${i}]} | sed 's/0x//g')
+            check ${privatee} && privatee=$(echo ${privatee} | sed 's/[a-z]/\u&/g') && privatee=`echo "obase=10; ibase=16; ${privatee}" | bc`
+            ;;
+        *)
+            if [ ${i}==$((${#}-1)) ]; then
+                testfile=${order[${i}]}
+                [ ! -f "${testfile}" ] && echo -e "${manual}" && exit 1
+            else
+                if [ "${order[${i}]}" != "-h" -a "${order[${i}]}" != "--help" ]; then
+                    fault="True"
+                else
+                    echo -e ${manual} && exit 0
+                fi
+            fi
+            ;;
+        esac
+done
+
+if  [ "${fault}" == "True" ]; then
+    echo -e ${manual} && exit 1
+fi
+
+if [ ${keygen} == true -a ${encrypt} == false ]
+then
+    if [ -z "${p}" -o -z "${q}" ]; then
+        echo -e ${manual} && exit 1
+    fi
+    keyGen ${p} ${q}
+    echo "Public exponent: ${publice}"
+    echo "Private exponent: ${privatee}"
+    echo "Modulus: ${modulus}"
+fi
+
+if [ ${encrypt} == true ]; then
+    if [ "${decrypt}" != "false" -o -z "${testfile}" ];then
+        echo -e ${manual} && exit 1
+    fi
+    if [ ${keygen} == true ]; then
+        if [ -z "${p}" -o -z "${q}" ]; then
+            echo -e ${manual} && exit 1
+        fi
+        keyGen ${p} ${q}
+        echo "Public exponent: ${publice}"
+        echo "Private exponent: ${privatee}"
+        echo "Modulus: ${modulus}"
+    elif [ -z "${publice}" -o -z "${modulus}" ]; then
+            echo -e ${manual} && exit 1
+    fi
+    cat ${testfile} | while read -r line || [[ -n ${line} ]]; do
+        power ${line} ${publice} ${modulus}
+    done
+fi
+
+if [ ${decrypt} == true ]; then
+    if [ -z "${privatee}" -o -z "${modulus}" ]; then
+        echo -e ${manual} && exit 1
+    fi
+    if [ "${encrypt}" != "false" -o -z "${testfile}" ];then
+        echo -e ${manual} && exit 1
+    fi
+
+
+    cat ${testfile} | while read -r line || [[ -n ${line} ]]; do
+        power ${line} ${privatee} ${modulus}
+    done
+fi
+
+exit 0
