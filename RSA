@@ -1,0 +1,173 @@
+#!/usr/bin/env bash
+
+manual="This command is an DSA verifying implementation written in shell script.\nusage: ./p2.sh --sig (<r>,<s>) --pubkey (<p>,<q>,<alpha >,<beta >) <file>"
+
+check(){
+    local sixteen=$( echo ${1} | grep '^0x' )
+    if [ "${sixteen}" != "" ]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+extended_gcd(){
+    if [ "${2}" == "0" ]; then
+        echo "${1}" "1" "0"
+        return
+    fi
+    local tmp=$(echo "${1}%${2}" | bc)
+    #echo ${tmp} >&2
+    IFS=" " read d x y<<<"$(extended_gcd ${2} ${tmp})"
+    #echo ${d} ${x} ${y} >&2
+    local record=$(echo "${x}-((((${1}/${2}))*${y}))" | bc)
+    #echo ${record}
+    echo "${d}" "${y}" "${record}"
+    return
+    
+}
+
+power(){
+    local ans=1
+    local a=${1}
+    local n=${2}
+    local N=${3}
+    # echo "${a}" >&2
+    # echo "${n}" >&2
+    # echo "${N}" >&2
+    while [ "${n}" != "0" ]
+    do
+        if [ "$(echo "${n}%2" | bc)" == "1" ]; then
+            ans=$(echo "${ans}*${a}%${N}" | bc)
+            ans=$(echo ${ans} | sed 's/\\[ \t]//g')
+
+        fi
+        a=$(echo "${a}*${a}%${N}" | bc)
+        a=$(echo ${a} | sed 's/\\[ \t]//g')
+        n=$(echo "${n}/2" | bc)
+        n=$(echo ${n} | sed 's/\\[ \t]//g')
+        #echo ${n}
+    done
+    ans=$(echo ${ans} | sed 's/\\[ \t]//g')
+    echo ${ans}
+    return 0
+}
+
+verifying(){
+    x=${1}
+    # echo "$(extended_gcd ${s} ${q})"
+    IFS=' ' read a d b<<<"$(extended_gcd ${s} ${q})"
+    w=$(echo "${d}+${q}" | bc)
+    w=$(echo "${w}%${q}" | bc)
+    # local tmp=$(echo "${q}-1" | bc)
+    # w=$(power ${s} ${tmp} ${q})
+    # w=$(echo ${w} | sed 's/\\[ \t]//g')
+    # echo "w" ${w}
+
+    SHA=$(echo "${x}" | sha1sum | cut -d " " -f 1)
+    SHA=$(echo ${SHA} | sed 's/[a-z]/\u&/g') && SHA=`echo "obase=10; ibase=16; ${SHA}" | bc`
+    SHA=$(echo ${SHA} | sed 's/\\[ \t]//g')
+    # echo "SHA" ${SHA}
+    local tmp1=$(echo "${w}*${SHA}" | bc)
+    tmp1=$(echo ${tmp1} | sed 's/\\[ \t]//g')
+    # echo "tmp1" ${tmp1}
+    u1=$(echo "${tmp1}%${q}" | bc)
+    u1=$(echo ${u1} | sed 's/\\[ \t]//g')
+    # echo "u1" ${u1}
+
+    local tmp2=$(echo "${w}*${r}" | bc)
+    tmp2=$(echo ${tmp2} | sed 's/\\[ \t]//g')
+    u2=$(echo "${tmp2}%${q}" | bc)
+    u2=$(echo ${u2} | sed 's/\\[ \t]//g')
+    # echo "u2" ${u2}
+
+    local a=$(power ${alpha} ${u1} ${p})
+    a=$(echo ${a} | sed 's/\\[ \t]//g')
+    local b=$(power ${beta} ${u2} ${p})
+    b=$(echo ${b} | sed 's/\\[ \t]//g')
+    # echo "a" ${a}
+    # echo "b" ${b}
+    local tmp3=$(echo "${a}*${b}" | bc)
+    tmp3=$(echo ${tmp3} | sed 's/\\[ \t]//g')
+    tmp3=$(echo "${tmp3}%${p}" | bc)
+    tmp3=$(echo ${tmp3} | sed 's/\\[ \t]//g')
+    v=$(echo "${tmp3}%${q}" | bc)
+    # echo "v" ${v}
+
+    # echo "${v}"
+    # echo "${r}"
+    if [ "${v}" == "${r}" ]; then
+        echo True
+    else
+        echo False
+    fi
+    return
+}
+
+r=1
+s=1
+p=1
+q=1
+alpha=1
+beta=1
+sig=false
+pubkey=false
+testfile=""
+
+order=(${@})
+if [ "${#}" == "0" ]; then
+    echo -e ${manual} && exit 1
+fi
+for ((i=0;i<${#};i++))
+do
+    case ${order[${i}]} in
+        "--sig")
+            sig=true
+            i=$((${i}+1))
+            IFS=',' read r s<<<"$(echo ${order[${i}]} | sed 's/[()]//g')"
+            check ${r} && r=$(echo ${r} | sed 's/0x//g') && r=$(echo ${r} | sed 's/[a-z]/\u&/g') && r=`echo "obase=10; ibase=16; ${r}" | bc`
+            check ${s} && s=$(echo ${s} | sed 's/0x//g') && s=$(echo ${s} | sed 's/[a-z]/\u&/g') && s=`echo "obase=10; ibase=16; ${s}" | bc`
+            r=$(echo ${r} | sed 's/\\[ \t]//g')
+            s=$(echo ${s} | sed 's/\\[ \t]//g')
+            ;;
+        "--pubkey")
+            pubkey=true
+            i=$((${i}+1))
+            IFS=',' read p q alpha beta<<<"$(echo ${order[${i}]} | sed 's/[()]//g')"
+            check ${p} && p=$(echo ${p} | sed 's/0x//g') && p=$(echo ${p} | sed 's/[a-z]/\u&/g') && p=`echo "obase=10; ibase=16; ${p}" | bc`
+            check ${q} && q=$(echo ${q} | sed 's/0x//g') && q=$(echo ${q} | sed 's/[a-z]/\u&/g') && q=`echo "obase=10; ibase=16; ${q}" | bc`
+            check ${alpha} && alpha=$(echo ${alpha} | sed 's/0x//g') && alpha=$(echo ${alpha} | sed 's/[a-z]/\u&/g') && alpha=`echo "obase=10; ibase=16; ${alpha}" | bc`
+            check ${beta} && beta=$(echo ${beta} | sed 's/0x//g') && beta=$(echo ${beta} | sed 's/[a-z]/\u&/g') && beta=`echo "obase=10; ibase=16; ${beta}" | bc`
+            p=$(echo ${p} | sed 's/\\[ \t]//g')
+            q=$(echo ${q} | sed 's/\\[ \t]//g')
+            alpha=$(echo ${alpha} | sed 's/\\[ \t]//g')
+            beta=$(echo ${beta} | sed 's/\\[ \t]//g')
+            ;;
+        *)
+            if [ ${i}==$((${#}-1)) ]; then
+                testfile=${order[${i}]}
+                [ ! -f "${testfile}" ] && echo -e "${manual}" && exit 1
+            else
+                if [ "${order[${i}]}" != "-h" -a "${order[${i}]}" != "--help" ]; then
+                    echo -e ${manual} && exit 1
+                else
+                    echo -e ${manual} && exit 0
+                fi
+            fi
+            ;;
+        esac
+done
+
+# echo ${p}
+# echo ${q}
+# echo ${r}
+# echo ${s}
+# echo ${alpha}
+# echo ${beta}
+
+cat ${testfile} | while read -r line || [[ -n ${line} ]]; do
+    verifying ${line}
+    #echo ${line}
+done
+
+exit 0
