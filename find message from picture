@@ -1,0 +1,17 @@
+from PIL import Image
+
+image_file = "informative_doge.png"
+data = ""
+# Open image
+img = Image.open(image_file)
+
+# Get pixels' values
+pixels = list(img.getdata())
+
+# Get pixels' row number
+rows = len(pixels)
+
+for i in range(rows//3):
+        colors = list(pixels[i * 3]) + list(pixels[i * 3 + 1]) + list(pixels[i * 3 + 2])
+        binary = ''.join(['1' if (c%2==1) else '0' for c in colors])
+        print(chr(int(binary[0:8],2)))
