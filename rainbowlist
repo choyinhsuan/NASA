@@ -1,0 +1,10 @@
+import hashlib
+
+for i in range(2**24):
+    h = hashlib.md5(f'{i}'.encode()).hexdigest()[0:8]
+    f = open(f'{h[0]}/{h[1]}/{h[2:6]}', 'a')
+    #print(f'/list/{h[0:2]}')
+    ans = h+' '+str(i)
+    f.write(ans)
+    f.write("\n")
+    f.close()
